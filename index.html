@@ -374,13 +374,19 @@ padding: 8px;
             Use PhonePe, Google Pay, Paytm, BHIM, or any UPI app to scan.
           </p>
 
-          <img id="upiQr" src="images/qr.png" alt="NoteNest UPI QR Code" />
+          <!-- <img id="upiQr" src="images/qr.png" alt="NoteNest UPI QR Code" /> -->
+
+<!-- Desktop fallback elements required by the script -->
+<canvas id="qrCanvas" style="display:none; margin-top:10px;"></canvas>
+<div id="linkFallback" style="margin-top:8px;"></div>
+
+
           <div class="qr-caption">UPI ID: yourupi@bank</div>
 
           <div style="margin-top: 18px">
-            <button class="btn" id="paidBtn">
-              I Have Paid (Get My Download Link!)
-            </button>
+            
+            <button class="btn" id="pay19">Pay ₹19</button>
+              
             <div style="height: 12px"></div>
             <a
               class="btn secondary"
@@ -437,113 +443,139 @@ padding: 8px;
       reserved
     </footer>
 
-        <script>
-      // --- Secure payment front-end (replace the old demo-only handler) ---
-      // This script:
-      // 1) asks your server to create a payment link (/create-payment)
-      // 2) opens the link (short_url) which triggers UPI app on mobile
-      // 3) polls /order-status?linkId=... until backend reports "paid"
-      // 4) displays a secure download link that uses a short-lived token
 
-      document.getElementById("year").textContent = new Date().getFullYear();
 
-      const paidBtn = document.getElementById("paidBtn");
-      const downloadCard = document.getElementById("downloadCard");
-      const downloadLink = document.getElementById("downloadLink");
 
-      // Helper: small delay
-      const wait = ms => new Promise(res => setTimeout(res, ms));
 
-      paidBtn.addEventListener("click", async function (e) {
-        e.preventDefault();
 
-        try {
-          paidBtn.disabled = true;
-          paidBtn.textContent = "Creating payment...";
 
-          // 1) Create payment via your backend
-          const resp = await fetch('/create-payment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: 19, currency: 'INR', description: 'NoteNest ₹19' })
-          });
 
-          if (!resp.ok) {
-            const err = await resp.json().catch(()=>({message:'server error'}));
-            throw new Error(err.message || 'Failed to create payment');
-          }
 
-          const body = await resp.json();
-          // Expecting { id, short_url } from backend
-          if (!body || !body.id || !body.short_url) throw new Error('Invalid payment creation response');
 
-          // 2) Open payment link in a new tab/window (on mobile this opens UPI apps)
-          window.open(body.short_url, '_blank');
 
-          // 3) Poll order status until backend marks it "paid"
-          paidBtn.textContent = "Waiting for payment confirmation...";
-          const linkId = body.id;
-          let attempts = 0;
-          const maxAttempts = 80; // ~4 minutes at 3s per poll
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+<script>
+// --- CONFIG: edit ONLY these ---
+const linkPeBase = "https://karan-rathore123.github.io/Link_pe/"; // your hosted LinkPe URL
+const driveLink = "https://drive.google.com/file/d/1v9pzytTpwRgdnQOK12kLpVEALR5sGhMv/view?usp=drivesdk"; // your google drive pdf link
 
-          while (attempts < maxAttempts) {
-            await wait(3000);
-            attempts++;
+const payeeUPI = "karanharshsingh492@oksbi";
+const payeeName = "NoteNest";
+const amount = "19";
+const tnxNote = "Order:19";
+// --- end config ---
 
-            const st = await fetch(`/order-status?linkId=${encodeURIComponent(linkId)}`, {
-              method: 'GET',
-              headers: { 'Accept': 'application/json' }
-            });
+function buildLinkPeWithReturn(pa, pn, amt, tn, returnUrl) {
+  const params = new URLSearchParams({
+    pa: pa,
+    pn: pn,
+    amt: amt,
+    tn: tn || "",
+    returnurl: returnUrl || ""
+  });
+  return `${linkPeBase}?${params.toString()}`;
+}
 
-            if (!st.ok) {
-              // continue polling but log if needed
-              continue;
-            }
-            const sdata = await st.json();
+function ensureFallbackElements() {
+  let canvas = document.getElementById('qrCanvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'qrCanvas';
+    canvas.style.display = 'none';
+    canvas.style.marginTop = '10px';
+    const parent = document.getElementById('payment-card') || document.body;
+    parent.appendChild(canvas);
+  }
+  let linkDiv = document.getElementById('linkFallback');
+  if (!linkDiv) {
+    linkDiv = document.createElement('div');
+    linkDiv.id = 'linkFallback';
+    linkDiv.style.marginTop = '8px';
+    const parent = document.getElementById('payment-card') || document.body;
+    parent.appendChild(linkDiv);
+  }
+  return { canvas, linkDiv };
+}
 
-            // sdata should include at least { status: 'created'|'paid', downloadToken?: '...' }
-            if (sdata.status === 'paid') {
-              // server should provide a short-lived token (or a presigned download URL)
-              // Prefer token approach: server returns downloadToken, and frontend uses /download?token=...
-              if (sdata.downloadToken) {
-                // show download card with secured token link
-                downloadLink.href = `/download?token=${encodeURIComponent(sdata.downloadToken)}`;
-                // keep download attribute if you want: it will prompt save
-                // downloadLink.setAttribute('download','NoteNest.pdf');
-              } else if (sdata.downloadUrl) {
-                // fallback: server returned a presigned URL
-                downloadLink.href = sdata.downloadUrl;
-              } else {
-                // no token/url provided — still show message and instruct user to check email
-                downloadLink.href = '#';
-              }
+function showDesktopFallback(link) {
+  try {
+    const { canvas, linkDiv } = ensureFallbackElements();
+    canvas.style.display = 'block';
+    if (window.QRious) {
+      new QRious({ element: canvas, value: link, size: 240 });
+    } else {
+      canvas.style.display = 'none';
+    }
+    linkDiv.innerHTML = `<p></p>`;
+  } catch (err) { console.error(err); }
+}
 
-              downloadCard.style.display = 'block';
-              downloadCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+function isMobile() {
+  return /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+}
 
-              paidBtn.textContent = 'I Have Paid (Get Link Now)';
-              paidBtn.disabled = false;
-              return;
-            }
+const payBtn = document.getElementById('pay19');
+if (!payBtn) {
+  console.error('pay19 element not found — ensure your pay button has id="pay19"');
+} else {
+  payBtn.addEventListener('click', function () {
+    try {
+      // <--- changed line: build LinkPe with returnurl pointing to your Drive PDF
+      const link = buildLinkPeWithReturn(payeeUPI, payeeName, amount, tnxNote, driveLink);
+      console.log('Payment link:', link);
 
-            // optional: update UI for long waits
-            if (attempts % 10 === 0) {
-              paidBtn.textContent = `Still waiting... (${Math.floor(attempts*3/60)} min)`;
-            }
-          }
+      if (isMobile()) {
+        window.location.href = link;
+        return;
+      }
 
-          // if we get here -> timed out
-          paidBtn.textContent = "I Have Paid (Get Link Now)";
-          paidBtn.disabled = false;
-          alert('Payment not detected yet. If you completed the payment, wait a moment or contact support.');
-        } catch (err) {
-          console.error(err);
-          paidBtn.textContent = "I Have Paid (Get Link Now)";
-          paidBtn.disabled = false;
-          alert('Error: ' + (err.message || 'Something went wrong'));
-        }
-      });
-    </script>
+      const newWin = window.open(link, '_blank');
+      if (!newWin) {
+        console.warn('Popup blocked — showing fallback QR & link');
+        showDesktopFallback(link);
+        try { navigator.clipboard.writeText(link).catch(()=>{}); } catch(e){}
+      } else {
+        try { newWin.focus(); } catch(e){}
+        showDesktopFallback(link);
+      }
+
+    } catch (err) {
+      console.error('Error on pay click:', err);
+      try { showDesktopFallback(buildLinkPeWithReturn(payeeUPI, payeeName, amount, tnxNote, driveLink)); } catch(e){}
+    }
+  });
+}
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
 
   </body>
 </html>
